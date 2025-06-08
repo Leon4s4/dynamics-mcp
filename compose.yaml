@@ -1,0 +1,6 @@
+services:
+  dynamics-mcp:
+    image: dynamics-mcp
+    build:
+      context: .
+      dockerfile: dynamics-mcp/Dockerfile
