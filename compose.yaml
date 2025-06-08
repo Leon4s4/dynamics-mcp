@@ -1,5 +1,5 @@
 services:
-  grapql-mcp:
+  dynamics-mcp:
     image: dynamics-mcp
     build:
       context: .
