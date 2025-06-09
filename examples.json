@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dynamics 365 MCP Server Example",
+  "description": "Example configuration and usage for the Dynamics 365 MCP Server",
+  "examples": {
+    "registerEndpoint": {
+      "tool": "RegisterDynamicsEndpoint",
+      "arguments": {
+        "baseUrl": "https://contoso.api.crm.dynamics.com",
+        "bearerToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6...",
+        "prefix": "contoso"
+      }
+    },
+    "listTools": {
+      "tool": "ListDynamicTools",
+      "arguments": {}
+    },
+    "createAccount": {
+      "tool": "ExecuteDynamicTool",
+      "arguments": {
+        "toolName": "dynamics_create_account",
+        "inputJson": "{\"name\": \"Contoso Corporation\", \"websiteurl\": \"https://contoso.com\", \"telephone1\": \"+1-555-0123\"}"
+      }
+    },
+    "readContact": {
+      "tool": "ExecuteDynamicTool",
+      "arguments": {
+        "toolName": "dynamics_read_contact",
+        "inputJson": "{\"id\": \"12345678-1234-1234-1234-123456789012\"}"
+      }
+    },
+    "updateOpportunity": {
+      "tool": "ExecuteDynamicTool",
+      "arguments": {
+        "toolName": "dynamics_update_opportunity",
+        "inputJson": "{\"id\": \"87654321-4321-4321-4321-210987654321\", \"name\": \"Updated Opportunity Name\", \"estimatedvalue\": 50000}"
+      }
+    },
+    "listAccounts": {
+      "tool": "ExecuteDynamicTool",
+      "arguments": {
+        "toolName": "dynamics_list_account",
+        "inputJson": "{\"filter\": \"revenue gt 1000000\", \"select\": \"name,revenue,websiteurl\", \"top\": 10, \"orderby\": \"revenue desc\"}"
+      }
+    },
+    "searchContactsByLastName": {
+      "tool": "ExecuteDynamicTool",
+      "arguments": {
+        "toolName": "dynamics_search_contact_by_lastname",
+        "inputJson": "{\"lastname\": \"Smith\", \"exactMatch\": false}"
+      }
+    },
+    "deleteAccount": {
+      "tool": "ExecuteDynamicTool",
+      "arguments": {
+        "toolName": "dynamics_delete_account",
+        "inputJson": "{\"id\": \"11111111-1111-1111-1111-111111111111\"}"
+      }
+    },
+    "refreshEndpoint": {
+      "tool": "RefreshEndpointTools",
+      "arguments": {
+        "endpointId": "contoso_api_crm_dynamics_com"
+      }
+    },
+    "unregisterEndpoint": {
+      "tool": "UnregisterEndpoint",
+      "arguments": {
+        "endpointId": "contoso_api_crm_dynamics_com"
+      }
+    }
+  },
+  "commonEntityFields": {
+    "account": {
+      "name": "Account name (required)",
+      "websiteurl": "Website URL",
+      "telephone1": "Primary phone",
+      "emailaddress1": "Primary email",
+      "revenue": "Annual revenue",
+      "numberofemployees": "Number of employees",
+      "description": "Account description"
+    },
+    "contact": {
+      "firstname": "First name",
+      "lastname": "Last name (often required)",
+      "emailaddress1": "Primary email",
+      "telephone1": "Primary phone",
+      "jobtitle": "Job title",
+      "parentcustomerid": "Account (lookup)"
+    },
+    "opportunity": {
+      "name": "Opportunity name (required)",
+      "estimatedvalue": "Estimated value",
+      "estimatedclosedate": "Estimated close date",
+      "description": "Description",
+      "parentaccountid": "Account (lookup)",
+      "parentcontactid": "Contact (lookup)"
+    },
+    "lead": {
+      "firstname": "First name",
+      "lastname": "Last name (often required)",
+      "companyname": "Company name",
+      "emailaddress1": "Primary email",
+      "telephone1": "Primary phone",
+      "subject": "Topic (required)"
+    }
+  },
+  "oDataQueryOptions": {
+    "filter": {
+      "description": "OData filter expression",
+      "examples": [
+        "name eq 'Contoso'",
+        "revenue gt 1000000",
+        "createdon ge 2024-01-01T00:00:00Z",
+        "contains(name, 'Corp')"
+      ]
+    },
+    "select": {
+      "description": "Comma-separated list of fields to return",
+      "examples": [
+        "name,revenue",
+        "firstname,lastname,emailaddress1",
+        "name,estimatedvalue,estimatedclosedate"
+      ]
+    },
+    "orderby": {
+      "description": "Field to sort by (add ' desc' for descending)",
+      "examples": [
+        "name",
+        "createdon desc",
+        "revenue desc"
+      ]
+    },
+    "top": {
+      "description": "Maximum number of records to return (1-5000)",
+      "default": 50
+    }
+  }
+}
