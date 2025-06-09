@@ -655,7 +655,7 @@ public class DynamicToolRegistry
 
     private async Task<object> ExecuteReadAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
-        if (!input.TryGetValue("id", out var idObj) || idObj?.ToString() is not string id)
+        if (!input.TryGetValue("id", out var idObj) || idObj is not string id || string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("ID is required for read operation");
 
         var path = tool.ApiPath.Replace("{id}", id);
@@ -668,7 +668,7 @@ public class DynamicToolRegistry
 
     private async Task<object> ExecuteUpdateAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
-        if (!input.TryGetValue("id", out var idObj) || idObj?.ToString() is not string id)
+        if (!input.TryGetValue("id", out var idObj) || idObj is not string id || string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("ID is required for update operation");
 
         var updateData = new Dictionary<string, object>(input);
@@ -686,7 +686,7 @@ public class DynamicToolRegistry
 
     private async Task<object> ExecuteDeleteAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
-        if (!input.TryGetValue("id", out var idObj) || idObj?.ToString() is not string id)
+        if (!input.TryGetValue("id", out var idObj) || idObj is not string id || string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("ID is required for delete operation");
 
         var path = tool.ApiPath.Replace("{id}", id);
