@@ -655,8 +655,9 @@ public class DynamicToolRegistry
 
     private async Task<object> ExecuteReadAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
-        if (!input.TryGetValue("id", out var idObj) || idObj is not string id || string.IsNullOrWhiteSpace(id))
+        if (!input.TryGetValue("id", out var idObj) || string.IsNullOrWhiteSpace(idObj?.ToString()))
             throw new ArgumentException("ID is required for read operation");
+        var id = idObj.ToString();
 
         var path = tool.ApiPath.Replace("{id}", id);
         var response = await client.GetAsync(path);
