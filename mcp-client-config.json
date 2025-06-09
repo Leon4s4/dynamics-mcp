@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "dynamics365": {
+      "command": "/Users/Git/dynamics-mcp/launch.sh",
+      "args": [],
+      "env": {},
+      "description": "Microsoft Dynamics 365 MCP Server - Dynamic tool registry for Dataverse API integration"
+    }
+  }
+}

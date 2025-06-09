@@ -2,37 +2,30 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Dynamics.Mcp;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Configure logging
 builder.Logging.AddConsole(consoleLogOptions =>
 {
     consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
 });
+
+// Configure services
 builder.Services
+    .AddHttpClient() // Add HttpClient factory for Dynamics API calls
+    .AddSingleton<DynamicToolRegistry>() // Register the dynamic tool registry
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithToolsFromAssembly();
 
-var endpoint = Environment.GetEnvironmentVariable("ENDPOINT") ?? "http://localhost:4000/dynamicsql";
-var headersJson = Environment.GetEnvironmentVariable("HEADERS") ?? "{}";
-Dictionary<string, string> headers;
-try
-{
-    headers = JsonSerializer.Deserialize<Dictionary<string, string>>(headersJson) ?? new();
-}
-catch
-{
-    headers = new();
-}
-
-var name = Environment.GetEnvironmentVariable("NAME") ?? "mcp-dynamicsql";
-var schemaPath = Environment.GetEnvironmentVariable("SCHEMA");
-if (!string.IsNullOrWhiteSpace(schemaPath) && File.Exists(schemaPath))
-{
-    var schemaContent = File.ReadAllText(schemaPath);
-    builder.Services.AddSingleton(schemaContent);
-}
-
-Console.WriteLine($"Starting MCP server: {name}");
+Console.WriteLine("Starting MCP server for Microsoft Dynamics 365");
+Console.WriteLine("Available MCP tools:");
+Console.WriteLine("- RegisterDynamicsEndpoint: Register a Dynamics 365 instance");
+Console.WriteLine("- ListDynamicTools: List all generated tools");
+Console.WriteLine("- ExecuteDynamicTool: Execute a generated tool");
+Console.WriteLine("- RefreshEndpointTools: Refresh tools for an endpoint");
+Console.WriteLine("- UnregisterEndpoint: Remove an endpoint and its tools");
 
 await builder.Build().RunAsync();
