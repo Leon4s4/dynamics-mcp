@@ -5,130 +5,277 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
+using Microsoft.Extensions.Configuration;
 
 namespace Dynamics.Mcp;
+
+/// <summary>
+/// Connection string parser for Dynamics 365 CRM connection strings.
+/// </summary>
+public class DynamicsConnectionString
+{
+    public string Url { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string? Password { get; set; }
+    public string AuthType { get; set; } = "OAuth";
+    public string LoginPrompt { get; set; } = "Never";
+
+    public static DynamicsConnectionString Parse(string connectionString)
+    {
+        var result = new DynamicsConnectionString();
+        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        
+        foreach (var part in parts)
+        {
+            var keyValue = part.Split('=', 2);
+            if (keyValue.Length == 2)
+            {
+                var key = keyValue[0].Trim();
+                var value = keyValue[1].Trim();
+                
+                switch (key.ToLowerInvariant())
+                {
+                    case "url":
+                        result.Url = value;
+                        break;
+                    case "clientid":
+                        result.ClientId = value;
+                        break;
+                    case "clientsecret":
+                        result.ClientSecret = value;
+                        break;
+                    case "password":
+                        result.Password = value;
+                        break;
+                    case "authtype":
+                        result.AuthType = value;
+                        break;
+                    case "loginprompt":
+                        result.LoginPrompt = value;
+                        break;
+                }
+            }
+        }
+        
+        return result;
+    }
+}
 
 /// <summary>
 /// Dynamic MCP tool registry for Microsoft Dynamics 365 (Dataverse API).
 /// Automatically introspects Dynamics schema and generates MCP tools at runtime.
 /// </summary>
-[McpServerToolType]
 public class DynamicToolRegistry
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<DynamicToolRegistry> _logger;
-    private readonly ConcurrentDictionary<string, DynamicsEndpoint> _endpoints = new();
-    private readonly ConcurrentDictionary<string, List<DynamicTool>> _toolsCache = new();
+    private readonly IConfiguration _configuration;
+    private DynamicsEndpoint? _endpoint;
+    private readonly List<DynamicTool> _tools = new();
 
     /// <summary>
     /// Initializes a new instance of the DynamicToolRegistry.
     /// </summary>
     /// <param name="httpClientFactory">Factory for creating HTTP clients</param>
     /// <param name="logger">Logger instance</param>
-    public DynamicToolRegistry(IHttpClientFactory httpClientFactory, ILogger<DynamicToolRegistry> logger)
+    /// <param name="configuration">Configuration instance</param>
+    public DynamicToolRegistry(IHttpClientFactory httpClientFactory, ILogger<DynamicToolRegistry> logger, IConfiguration configuration)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
     /// <summary>
-    /// Registers a Dynamics 365 endpoint and generates tools for all available entities.
+    /// Initializes the Dynamics endpoint from environment variables and generates tools.
     /// </summary>
-    /// <param name="baseUrl">Base URL of the Dynamics 365 instance (e.g., https://contoso.api.crm.dynamics.com)</param>
-    /// <param name="bearerToken">OAuth 2.0 bearer token for authentication</param>
-    /// <param name="prefix">Optional prefix for tool names (default: endpoint identifier)</param>
-    /// <returns>Registration result with endpoint ID and generated tool count</returns>
-    [McpServerTool, Description("Registers a Dynamics 365 endpoint and generates MCP tools for all entities")]
-    public async Task<RegisterEndpointResult> RegisterDynamicsEndpoint(
-        string baseUrl, 
-        string bearerToken, 
-        string? prefix = null)
+    public async Task InitializeAsync()
     {
         try
         {
-            _logger.LogInformation("Registering Dynamics endpoint: {BaseUrl}", baseUrl);
+            var connectionString = _configuration.GetConnectionString("Dynamics") ?? 
+                                 Environment.GetEnvironmentVariable("DYNAMICS_CONNECTION_STRING");
+            
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                _logger.LogWarning("No Dynamics connection string found in environment variables or configuration");
+                return;
+            }
 
-            if (string.IsNullOrWhiteSpace(baseUrl))
-                return new RegisterEndpointResult { Success = false, Message = "Base URL cannot be null or empty" };
+            _logger.LogInformation("Initializing Dynamics endpoint from connection string");
+            
+            var connString = DynamicsConnectionString.Parse(connectionString);
+            
+            if (string.IsNullOrWhiteSpace(connString.Url))
+            {
+                _logger.LogError("Invalid connection string: URL is required");
+                return;
+            }
+
+            // For now, we'll use ClientId/ClientSecret OAuth flow
+            // In a real implementation, you'd need to get an access token
+            var bearerToken = await GetAccessTokenAsync(connString);
             
             if (string.IsNullOrWhiteSpace(bearerToken))
-                return new RegisterEndpointResult { Success = false, Message = "Bearer token cannot be null or empty" };
-
-            var endpointId = GenerateEndpointId(baseUrl);
-            var toolPrefix = prefix ?? endpointId;
-
-            var endpoint = new DynamicsEndpoint
             {
-                Id = endpointId,
-                BaseUrl = baseUrl.TrimEnd('/'),
+                _logger.LogError("Failed to obtain access token from connection string");
+                return;
+            }
+
+            _endpoint = new DynamicsEndpoint
+            {
+                Id = "default",
+                BaseUrl = connString.Url.TrimEnd('/'),
                 BearerToken = bearerToken,
-                Prefix = toolPrefix,
+                Prefix = "dynamics",
                 RegisteredAt = DateTime.UtcNow
             };
 
-            // Test connection and get entities
-            var entities = await IntrospectEntitiesAsync(endpoint);
+            // Generate tools for all entities
+            var entities = await IntrospectEntitiesAsync(_endpoint);
             
-            // Generate tools for each entity
-            var tools = new List<DynamicTool>();
             foreach (var entity in entities)
             {
-                var entityTools = await GenerateToolsForEntityAsync(endpoint, entity);
-                tools.AddRange(entityTools);
+                var entityTools = await GenerateToolsForEntityAsync(_endpoint, entity);
+                _tools.AddRange(entityTools);
             }
 
-            // Store endpoint and tools
-            _endpoints.TryAdd(endpointId, endpoint);
-            _toolsCache.AddOrUpdate(endpointId, tools, (key, old) => tools);
-
-            _logger.LogInformation("Successfully registered endpoint {EndpointId} with {ToolCount} tools", 
-                endpointId, tools.Count);
-
-            return new RegisterEndpointResult
-            {
-                EndpointId = endpointId,
-                ToolCount = tools.Count,
-                Success = true,
-                Message = $"Successfully registered {tools.Count} tools for endpoint {endpointId}"
-            };
+            _logger.LogInformation("Successfully initialized Dynamics endpoint with {ToolCount} tools", _tools.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to register Dynamics endpoint: {BaseUrl}", baseUrl);
-            return new RegisterEndpointResult
+            _logger.LogError(ex, "Failed to initialize Dynamics endpoint");
+        }
+    }
+
+    private async Task<string> GetAccessTokenAsync(DynamicsConnectionString connString)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(connString.ClientId) || string.IsNullOrEmpty(connString.ClientSecret))
             {
-                Success = false,
-                Message = $"Failed to register endpoint: {ex.Message}"
+                _logger.LogError("ClientId and ClientSecret are required for OAuth authentication");
+                return string.Empty;
+            }
+
+            // Extract tenant from URL (e.g., https://org.crm.dynamics.com -> org.crm.dynamics.com)
+            var uri = new Uri(connString.Url);
+            var resource = $"https://{uri.Host}/";
+            
+            // Use Client Credentials flow
+            var tokenEndpoint = "https://login.microsoftonline.com/common/oauth2/token";
+            
+            var tokenRequest = new Dictionary<string, string>
+            {
+                ["grant_type"] = "client_credentials",
+                ["client_id"] = connString.ClientId,
+                ["client_secret"] = connString.ClientSecret,
+                ["resource"] = resource
             };
+
+            using var client = _httpClientFactory.CreateClient();
+            var content = new FormUrlEncodedContent(tokenRequest);
+            var response = await client.PostAsync(tokenEndpoint, content);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to obtain access token: {StatusCode} - {Content}", 
+                    response.StatusCode, errorContent);
+                return string.Empty;
+            }
+
+            var tokenResponse = await response.Content.ReadAsStringAsync();
+            var tokenData = JsonSerializer.Deserialize<Dictionary<string, object>>(tokenResponse);
+
+            if (tokenData != null && tokenData.TryGetValue("access_token", out var accessToken))
+            {
+                return accessToken.ToString() ?? string.Empty;
+            }
+
+            _logger.LogError("Access token not found in response");
+            return string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error obtaining access token");
+            return string.Empty;
         }
     }
 
     /// <summary>
-    /// Lists all dynamically generated tools grouped by endpoint and entity.
+    /// Gets the status of the Dynamics endpoint and tool initialization.
     /// </summary>
-    /// <returns>Collection of tools grouped by endpoint</returns>
-    [McpServerTool, Description("Lists all dynamically generated Dynamics 365 tools")]
+    /// <returns>Status information about the endpoint and tools</returns>
+    public Task<EndpointStatusResult> GetEndpointStatus()
+    {
+        try
+        {
+            if (_endpoint == null)
+            {
+                return Task.FromResult(new EndpointStatusResult
+                {
+                    Success = false,
+                    Message = "Dynamics endpoint not initialized. Check connection string configuration."
+                });
+            }
+
+            return Task.FromResult(new EndpointStatusResult
+            {
+                Success = true,
+                EndpointUrl = _endpoint.BaseUrl,
+                ToolCount = _tools.Count,
+                InitializedAt = _endpoint.RegisteredAt,
+                Message = $"Endpoint initialized with {_tools.Count} tools"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get endpoint status");
+            return Task.FromResult(new EndpointStatusResult
+            {
+                Success = false,
+                Message = $"Failed to get status: {ex.Message}"
+            });
+        }
+    }
+
+    /// <summary>
+    /// Lists all dynamically generated tools grouped by entity.
+    /// </summary>
+    /// <returns>Collection of tools grouped by entity</returns>
     public Task<ListToolsResult> ListDynamicTools()
     {
         try
         {
-            var result = new ListToolsResult { Success = true };
-
-            foreach (var (endpointId, tools) in _toolsCache)
+            if (_endpoint == null)
             {
-                var endpointTools = new EndpointTools
+                return Task.FromResult(new ListToolsResult
                 {
-                    EndpointId = endpointId,
-                    BaseUrl = _endpoints.TryGetValue(endpointId, out var endpoint) ? endpoint.BaseUrl : "Unknown",
-                    Tools = tools.GroupBy(t => t.EntityName)
-                        .ToDictionary(g => g.Key, g => g.ToList())
-                };
-                result.Endpoints.Add(endpointTools);
+                    Success = false,
+                    Message = "Dynamics endpoint not initialized. Check connection string configuration."
+                });
             }
 
-            result.TotalToolCount = _toolsCache.Values.Sum(tools => tools.Count);
-            _logger.LogInformation("Listed {ToolCount} tools across {EndpointCount} endpoints", 
-                result.TotalToolCount, result.Endpoints.Count);
+            var result = new ListToolsResult 
+            { 
+                Success = true,
+                TotalToolCount = _tools.Count
+            };
+
+            var groupedTools = _tools.GroupBy(t => t.EntityName)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            result.Endpoints.Add(new EndpointTools
+            {
+                EndpointId = _endpoint.Id,
+                BaseUrl = _endpoint.BaseUrl,
+                Tools = groupedTools
+            });
+
+            _logger.LogInformation("Listed {ToolCount} tools for endpoint {EndpointId}", 
+                result.TotalToolCount, _endpoint.Id);
 
             return Task.FromResult(result);
         }
@@ -149,7 +296,6 @@ public class DynamicToolRegistry
     /// <param name="toolName">Name of the tool to execute (format: dynamics_operation_entity)</param>
     /// <param name="inputJson">JSON input parameters for the tool</param>
     /// <returns>Execution result with response data or error information</returns>
-    [McpServerTool, Description("Executes a dynamically generated Dynamics 365 tool")]
     public async Task<ExecuteToolResult> ExecuteDynamicTool(string toolName, string inputJson)
     {
         try
@@ -159,35 +305,23 @@ public class DynamicToolRegistry
             if (string.IsNullOrWhiteSpace(toolName))
                 throw new ArgumentException("Tool name cannot be null or empty", nameof(toolName));
 
-            // Find the tool across all endpoints
-            DynamicTool? tool = null;
-            string? endpointId = null;
-
-            foreach (var (epId, tools) in _toolsCache)
+            if (_endpoint == null)
             {
-                tool = tools.FirstOrDefault(t => t.Name == toolName);
-                if (tool != null)
+                return new ExecuteToolResult
                 {
-                    endpointId = epId;
-                    break;
-                }
+                    Success = false,
+                    Message = "Dynamics endpoint not initialized. Check connection string configuration."
+                };
             }
 
-            if (tool == null || endpointId == null)
+            // Find the tool
+            var tool = _tools.FirstOrDefault(t => t.Name == toolName);
+            if (tool == null)
             {
                 return new ExecuteToolResult
                 {
                     Success = false,
                     Message = $"Tool '{toolName}' not found"
-                };
-            }
-
-            if (!_endpoints.TryGetValue(endpointId, out var endpoint))
-            {
-                return new ExecuteToolResult
-                {
-                    Success = false,
-                    Message = $"Endpoint '{endpointId}' not found"
                 };
             }
 
@@ -197,7 +331,7 @@ public class DynamicToolRegistry
                 : JsonSerializer.Deserialize<Dictionary<string, object>>(inputJson) ?? new();
 
             // Execute the tool
-            var response = await ExecuteToolAsync(endpoint, tool, inputData);
+            var response = await ExecuteToolAsync(_endpoint, tool, inputData);
 
             _logger.LogInformation("Successfully executed tool: {ToolName}", toolName);
 
@@ -220,98 +354,54 @@ public class DynamicToolRegistry
     }
 
     /// <summary>
-    /// Re-introspects schema and regenerates tools for a specific endpoint.
+    /// Re-introspects schema and regenerates tools for the Dynamics endpoint.
     /// </summary>
-    /// <param name="endpointId">ID of the endpoint to refresh</param>
     /// <returns>Refresh result with updated tool count</returns>
-    [McpServerTool, Description("Refreshes tools for a Dynamics 365 endpoint by re-introspecting the schema")]
-    public async Task<RefreshResult> RefreshEndpointTools(string endpointId)
+    public async Task<RefreshResult> RefreshTools()
     {
         try
         {
-            _logger.LogInformation("Refreshing tools for endpoint: {EndpointId}", endpointId);
-
-            if (!_endpoints.TryGetValue(endpointId, out var endpoint))
+            if (_endpoint == null)
             {
                 return new RefreshResult
                 {
                     Success = false,
-                    Message = $"Endpoint '{endpointId}' not found"
+                    Message = "Dynamics endpoint not initialized. Check connection string configuration."
                 };
             }
 
+            _logger.LogInformation("Refreshing tools for endpoint: {EndpointId}", _endpoint.Id);
+
             // Re-introspect entities
-            var entities = await IntrospectEntitiesAsync(endpoint);
+            var entities = await IntrospectEntitiesAsync(_endpoint);
             
-            // Regenerate tools
-            var tools = new List<DynamicTool>();
+            // Clear existing tools and regenerate
+            _tools.Clear();
             foreach (var entity in entities)
             {
-                var entityTools = await GenerateToolsForEntityAsync(endpoint, entity);
-                tools.AddRange(entityTools);
+                var entityTools = await GenerateToolsForEntityAsync(_endpoint, entity);
+                _tools.AddRange(entityTools);
             }
 
-            // Update cache
-            _toolsCache.AddOrUpdate(endpointId, tools, (key, old) => tools);
-
             _logger.LogInformation("Successfully refreshed endpoint {EndpointId} with {ToolCount} tools", 
-                endpointId, tools.Count);
+                _endpoint.Id, _tools.Count);
 
             return new RefreshResult
             {
                 Success = true,
-                EndpointId = endpointId,
-                ToolCount = tools.Count,
-                Message = $"Successfully refreshed {tools.Count} tools for endpoint {endpointId}"
+                EndpointId = _endpoint.Id,
+                ToolCount = _tools.Count,
+                Message = $"Successfully refreshed {_tools.Count} tools"
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to refresh endpoint tools: {EndpointId}", endpointId);
+            _logger.LogError(ex, "Failed to refresh tools");
             return new RefreshResult
             {
                 Success = false,
-                Message = $"Failed to refresh endpoint: {ex.Message}"
+                Message = $"Failed to refresh tools: {ex.Message}"
             };
-        }
-    }
-
-    /// <summary>
-    /// Unregisters an endpoint and removes all associated tools.
-    /// </summary>
-    /// <param name="endpointId">ID of the endpoint to unregister</param>
-    /// <returns>Unregistration result</returns>
-    [McpServerTool, Description("Unregisters a Dynamics 365 endpoint and removes all associated tools")]
-    public Task<UnregisterResult> UnregisterEndpoint(string endpointId)
-    {
-        try
-        {
-            _logger.LogInformation("Unregistering endpoint: {EndpointId}", endpointId);
-
-            var toolCount = _toolsCache.TryGetValue(endpointId, out var tools) ? tools.Count : 0;
-
-            _endpoints.TryRemove(endpointId, out _);
-            _toolsCache.TryRemove(endpointId, out _);
-
-            _logger.LogInformation("Successfully unregistered endpoint {EndpointId} and removed {ToolCount} tools", 
-                endpointId, toolCount);
-
-            return Task.FromResult(new UnregisterResult
-            {
-                Success = true,
-                EndpointId = endpointId,
-                RemovedToolCount = toolCount,
-                Message = $"Successfully unregistered endpoint {endpointId} and removed {toolCount} tools"
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to unregister endpoint: {EndpointId}", endpointId);
-            return Task.FromResult(new UnregisterResult
-            {
-                Success = false,
-                Message = $"Failed to unregister endpoint: {ex.Message}"
-            });
         }
     }
 
@@ -824,12 +914,13 @@ public class ODataResponse<T>
 }
 
 // Result models
-public class RegisterEndpointResult
+public class EndpointStatusResult
 {
-    public string? EndpointId { get; set; }
-    public int ToolCount { get; set; }
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
+    public string? EndpointUrl { get; set; }
+    public int ToolCount { get; set; }
+    public DateTime? InitializedAt { get; set; }
 }
 
 public class ListToolsResult
@@ -862,10 +953,3 @@ public class RefreshResult
     public int ToolCount { get; set; }
 }
 
-public class UnregisterResult
-{
-    public bool Success { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public string? EndpointId { get; set; }
-    public int RemovedToolCount { get; set; }
-}
