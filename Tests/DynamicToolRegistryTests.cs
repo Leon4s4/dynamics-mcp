@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,89 +11,111 @@ namespace Dynamics.Mcp.Tests;
 
 /// <summary>
 /// Unit tests for the DynamicToolRegistry class.
-/// Verifies tool registration, execution, and refresh functionality.
+/// Verifies initialization, tool listing, and execution functionality.
 /// </summary>
 public class DynamicToolRegistryTests
 {
     private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
     private readonly Mock<ILogger<DynamicToolRegistry>> _mockLogger;
+    private readonly Mock<IConfiguration> _mockConfiguration;
     private readonly DynamicToolRegistry _registry;
 
     public DynamicToolRegistryTests()
     {
         _mockHttpClientFactory = new Mock<IHttpClientFactory>();
         _mockLogger = new Mock<ILogger<DynamicToolRegistry>>();
-        _registry = new DynamicToolRegistry(_mockHttpClientFactory.Object, _mockLogger.Object);
+        _mockConfiguration = new Mock<IConfiguration>();
+        _registry = new DynamicToolRegistry(_mockHttpClientFactory.Object, _mockLogger.Object, _mockConfiguration.Object);
     }
 
     [Fact]
-    public async Task RegisterDynamicsEndpoint_WithInvalidParameters_HandlesGracefully()
+    public async Task InitializeAsync_WithoutConnectionString_HandlesGracefully()
     {
-        // Arrange
-        var validBaseUrl = "https://contoso.api.crm.dynamics.com";
-        var validBearerToken = "test-token";
+        // Arrange - No connection string setup, should return null
         
-        // Create a real HttpClient for this test
-        var httpClient = new HttpClient();
-        _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
-            .Returns(httpClient);
-
-        // Test with invalid URL - should return error result rather than throw
-        var result1 = await _registry.RegisterDynamicsEndpoint("", validBearerToken);
-        Assert.False(result1.Success);
-        Assert.Contains("Base URL", result1.Message);
+        // Act & Assert - Should not throw, just handle gracefully
+        var exception = await Record.ExceptionAsync(async () => await _registry.InitializeAsync());
         
-        var result2 = await _registry.RegisterDynamicsEndpoint(validBaseUrl, "");
-        Assert.False(result2.Success);
-        Assert.Contains("Bearer token", result2.Message);
-        
-        // Clean up
-        httpClient.Dispose();
+        // Should not throw an exception
+        Assert.Null(exception);
     }
 
     [Fact]
-    public async Task ListDynamicTools_WithEmptyRegistry_ReturnsEmptyResult()
+    public async Task GetEndpointStatus_WithoutInitialization_ReturnsNotInitialized()
+    {
+        // Act
+        var result = await _registry.GetEndpointStatus();
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("not initialized", result.Message);
+    }
+
+    [Fact]
+    public async Task ListDynamicTools_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
         var result = await _registry.ListDynamicTools();
 
         // Assert
-        Assert.True(result.Success);
-        Assert.Empty(result.Endpoints);
-        Assert.Equal(0, result.TotalToolCount);
+        Assert.False(result.Success);
+        Assert.Contains("not initialized", result.Message);
     }
 
     [Fact]
-    public async Task ExecuteDynamicTool_WithInvalidToolName_ReturnsError()
+    public async Task ExecuteDynamicTool_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
-        var result = await _registry.ExecuteDynamicTool("nonexistent_tool", "{}");
+        var result = await _registry.ExecuteDynamicTool("test_tool", "{}");
 
         // Assert
         Assert.False(result.Success);
-        Assert.Contains("not found", result.Message);
+        Assert.Contains("not initialized", result.Message);
     }
 
     [Fact]
-    public async Task UnregisterEndpoint_WithNonexistentEndpoint_ReturnsSuccess()
+    public async Task RefreshTools_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
-        var result = await _registry.UnregisterEndpoint("nonexistent");
-
-        // Assert
-        Assert.True(result.Success);
-        Assert.Equal(0, result.RemovedToolCount);
-    }
-
-    [Fact]
-    public async Task RefreshEndpointTools_WithNonexistentEndpoint_ReturnsError()
-    {
-        // Act
-        var result = await _registry.RefreshEndpointTools("nonexistent");
+        var result = await _registry.RefreshTools();
 
         // Assert
         Assert.False(result.Success);
-        Assert.Contains("not found", result.Message);
+        Assert.Contains("not initialized", result.Message);
+    }
+
+    [Fact]
+    public void DynamicsConnectionString_Parse_HandlesValidConnectionString()
+    {
+        // Arrange
+        var connectionString = "AuthType=OAuth;Url=https://contoso.crm.dynamics.com;ClientId=test-client;ClientSecret=test-secret;LoginPrompt=Never";
+
+        // Act
+        var result = DynamicsConnectionString.Parse(connectionString);
+
+        // Assert
+        Assert.Equal("OAuth", result.AuthType);
+        Assert.Equal("https://contoso.crm.dynamics.com", result.Url);
+        Assert.Equal("test-client", result.ClientId);
+        Assert.Equal("test-secret", result.ClientSecret);
+        Assert.Equal("Never", result.LoginPrompt);
+    }
+
+    [Fact]
+    public void DynamicsConnectionString_Parse_HandlesEmptyConnectionString()
+    {
+        // Arrange
+        var connectionString = "";
+
+        // Act
+        var result = DynamicsConnectionString.Parse(connectionString);
+
+        // Assert
+        Assert.Equal("OAuth", result.AuthType);
+        Assert.Equal("Never", result.LoginPrompt);
+        Assert.Empty(result.Url);
+        Assert.Empty(result.ClientId);
+        Assert.Empty(result.ClientSecret);
     }
 }
 
