@@ -17,9 +17,20 @@ public class DynamicsConnectionString
     public string Url { get; set; } = string.Empty;
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
-    public string? Password { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
     public string AuthType { get; set; } = "OAuth";
     public string LoginPrompt { get; set; } = "Never";
+    
+    /// <summary>
+    /// Determines if this is a Client Credentials flow (ClientId + ClientSecret)
+    /// </summary>
+    public bool IsClientCredentials => !string.IsNullOrEmpty(ClientId) && !string.IsNullOrEmpty(ClientSecret);
+    
+    /// <summary>
+    /// Determines if this is a Resource Owner Password flow (Username + Password)
+    /// </summary>
+    public bool IsUsernamePassword => !string.IsNullOrEmpty(Username) && !string.IsNullOrEmpty(Password);
 
     public static DynamicsConnectionString Parse(string connectionString)
     {
@@ -44,6 +55,10 @@ public class DynamicsConnectionString
                         break;
                     case "clientsecret":
                         result.ClientSecret = value;
+                        break;
+                    case "username":
+                    case "userid":
+                        result.Username = value;
                         break;
                     case "password":
                         result.Password = value;
@@ -153,26 +168,52 @@ public class DynamicToolRegistry
     {
         try
         {
-            if (string.IsNullOrEmpty(connString.ClientId) || string.IsNullOrEmpty(connString.ClientSecret))
-            {
-                _logger.LogError("ClientId and ClientSecret are required for OAuth authentication");
-                return string.Empty;
-            }
-
             // Extract tenant from URL (e.g., https://org.crm.dynamics.com -> org.crm.dynamics.com)
             var uri = new Uri(connString.Url);
             var resource = $"https://{uri.Host}/";
             
-            // Use Client Credentials flow
             var tokenEndpoint = "https://login.microsoftonline.com/common/oauth2/token";
-            
-            var tokenRequest = new Dictionary<string, string>
+            Dictionary<string, string> tokenRequest;
+
+            if (connString.IsClientCredentials)
             {
-                ["grant_type"] = "client_credentials",
-                ["client_id"] = connString.ClientId,
-                ["client_secret"] = connString.ClientSecret,
-                ["resource"] = resource
-            };
+                _logger.LogInformation("Using Client Credentials OAuth flow");
+                
+                // Client Credentials flow (App-only authentication)
+                tokenRequest = new Dictionary<string, string>
+                {
+                    ["grant_type"] = "client_credentials",
+                    ["client_id"] = connString.ClientId,
+                    ["client_secret"] = connString.ClientSecret,
+                    ["resource"] = resource
+                };
+            }
+            else if (connString.IsUsernamePassword)
+            {
+                _logger.LogInformation("Using Resource Owner Password Credentials OAuth flow");
+                
+                // Resource Owner Password Credentials flow (Username/Password)
+                if (string.IsNullOrEmpty(connString.ClientId))
+                {
+                    // Use default PowerApps client ID for username/password flow
+                    connString.ClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
+                    _logger.LogInformation("Using default PowerApps Client ID for username/password authentication");
+                }
+                
+                tokenRequest = new Dictionary<string, string>
+                {
+                    ["grant_type"] = "password",
+                    ["client_id"] = connString.ClientId,
+                    ["username"] = connString.Username,
+                    ["password"] = connString.Password,
+                    ["resource"] = resource
+                };
+            }
+            else
+            {
+                _logger.LogError("Invalid authentication configuration. Provide either ClientId+ClientSecret OR Username+Password");
+                return string.Empty;
+            }
 
             using var client = _httpClientFactory.CreateClient();
             var content = new FormUrlEncodedContent(tokenRequest);
@@ -191,6 +232,7 @@ public class DynamicToolRegistry
 
             if (tokenData != null && tokenData.TryGetValue("access_token", out var accessToken))
             {
+                _logger.LogInformation("Successfully obtained access token");
                 return accessToken.ToString() ?? string.Empty;
             }
 

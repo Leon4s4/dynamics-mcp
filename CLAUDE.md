@@ -70,10 +70,21 @@ The server uses a connection string from environment variables:
 - `DYNAMICS_CONNECTION_STRING` environment variable, or
 - `ConnectionStrings:Dynamics` in configuration
 
-Expected connection string format:
+**Two authentication methods supported:**
+
+#### Method 1: Username/Password (Simpler)
+```bash
+export DYNAMICS_CONNECTION_STRING="AuthType=OAuth;Url=https://yourorg.crm.dynamics.com;Username=your-username@yourorg.com;Password=your-password;LoginPrompt=Never"
 ```
-AuthType=OAuth;Url={crm url};ClientId={client id};ClientSecret={client secret};LoginPrompt=Never
+
+#### Method 2: Client Credentials (App Registration)
+```bash
+export DYNAMICS_CONNECTION_STRING="AuthType=OAuth;Url=https://yourorg.crm.dynamics.com;ClientId=your-client-id;ClientSecret=your-client-secret;LoginPrompt=Never"
 ```
+
+**Which method to use?**
+- **Username/Password**: Easier setup, uses your regular CRM login credentials
+- **Client Credentials**: More secure for production, requires Azure AD app registration
 
 ### Tool Generation Pattern
 
@@ -131,7 +142,19 @@ The server introspects these Dataverse endpoints:
 
 ### Authentication
 
-Uses OAuth 2.0 Client Credentials flow with ClientId/ClientSecret from the connection string. The access token is obtained automatically at startup and used for all subsequent Dataverse API calls.
+Supports two OAuth 2.0 flows automatically determined by the connection string:
+
+1. **Resource Owner Password Credentials Flow** (Username/Password)
+   - Uses your regular Dynamics 365 login credentials
+   - Automatically uses PowerApps Client ID for authentication
+   - Perfect for development and testing scenarios
+
+2. **Client Credentials Flow** (ClientId/ClientSecret)
+   - Uses Azure AD app registration credentials
+   - Recommended for production environments
+   - Provides better security and auditing capabilities
+
+The access token is obtained automatically at startup and used for all subsequent Dataverse API calls.
 
 ## Technology Stack
 

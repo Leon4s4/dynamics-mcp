@@ -85,7 +85,7 @@ public class DynamicToolRegistryTests
     }
 
     [Fact]
-    public void DynamicsConnectionString_Parse_HandlesValidConnectionString()
+    public void DynamicsConnectionString_Parse_HandlesClientCredentialsConnectionString()
     {
         // Arrange
         var connectionString = "AuthType=OAuth;Url=https://contoso.crm.dynamics.com;ClientId=test-client;ClientSecret=test-secret;LoginPrompt=Never";
@@ -99,6 +99,27 @@ public class DynamicToolRegistryTests
         Assert.Equal("test-client", result.ClientId);
         Assert.Equal("test-secret", result.ClientSecret);
         Assert.Equal("Never", result.LoginPrompt);
+        Assert.True(result.IsClientCredentials);
+        Assert.False(result.IsUsernamePassword);
+    }
+
+    [Fact]
+    public void DynamicsConnectionString_Parse_HandlesUsernamePasswordConnectionString()
+    {
+        // Arrange
+        var connectionString = "AuthType=OAuth;Url=https://contoso.crm.dynamics.com;Username=user@contoso.com;Password=mypassword;LoginPrompt=Never";
+
+        // Act
+        var result = DynamicsConnectionString.Parse(connectionString);
+
+        // Assert
+        Assert.Equal("OAuth", result.AuthType);
+        Assert.Equal("https://contoso.crm.dynamics.com", result.Url);
+        Assert.Equal("user@contoso.com", result.Username);
+        Assert.Equal("mypassword", result.Password);
+        Assert.Equal("Never", result.LoginPrompt);
+        Assert.False(result.IsClientCredentials);
+        Assert.True(result.IsUsernamePassword);
     }
 
     [Fact]
