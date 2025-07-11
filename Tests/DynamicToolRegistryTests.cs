@@ -16,16 +16,17 @@ namespace Dynamics.Mcp.Tests;
 public class DynamicToolRegistryTests
 {
     private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
-    private readonly Mock<ILogger<DynamicToolRegistry>> _mockLogger;
+    private readonly Mock<ILogger> _mockLogger;
     private readonly Mock<IConfiguration> _mockConfiguration;
-    private readonly DynamicToolRegistry _registry;
 
     public DynamicToolRegistryTests()
     {
         _mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        _mockLogger = new Mock<ILogger<DynamicToolRegistry>>();
+        _mockLogger = new Mock<ILogger>();
         _mockConfiguration = new Mock<IConfiguration>();
-        _registry = new DynamicToolRegistry(_mockHttpClientFactory.Object, _mockLogger.Object, _mockConfiguration.Object);
+        
+        // Initialize the static registry with mocked dependencies
+        DynamicToolRegistry.Initialize(_mockHttpClientFactory.Object, _mockLogger.Object, _mockConfiguration.Object);
     }
 
     [Fact]
@@ -34,7 +35,7 @@ public class DynamicToolRegistryTests
         // Arrange - No connection string setup, should return null
         
         // Act & Assert - Should not throw, just handle gracefully
-        var exception = await Record.ExceptionAsync(async () => await _registry.InitializeAsync());
+        var exception = await Record.ExceptionAsync(async () => await DynamicToolRegistry.InitializeAsync());
         
         // Should not throw an exception
         Assert.Null(exception);
@@ -44,7 +45,7 @@ public class DynamicToolRegistryTests
     public async Task GetEndpointStatus_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
-        var result = await _registry.GetEndpointStatus();
+        var result = await DynamicToolRegistry.GetEndpointStatus();
 
         // Assert
         Assert.False(result.Success);
@@ -55,7 +56,7 @@ public class DynamicToolRegistryTests
     public async Task ListDynamicTools_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
-        var result = await _registry.ListDynamicTools();
+        var result = await DynamicToolRegistry.ListDynamicTools();
 
         // Assert
         Assert.False(result.Success);
@@ -66,7 +67,7 @@ public class DynamicToolRegistryTests
     public async Task ExecuteDynamicTool_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
-        var result = await _registry.ExecuteDynamicTool("test_tool", "{}");
+        var result = await DynamicToolRegistry.ExecuteDynamicTool("test_tool", "{}");
 
         // Assert
         Assert.False(result.Success);
@@ -77,7 +78,7 @@ public class DynamicToolRegistryTests
     public async Task RefreshTools_WithoutInitialization_ReturnsNotInitialized()
     {
         // Act
-        var result = await _registry.RefreshTools();
+        var result = await DynamicToolRegistry.RefreshTools();
 
         // Assert
         Assert.False(result.Success);
@@ -152,7 +153,6 @@ public class McpServerIntegrationTests
         var builder = Host.CreateApplicationBuilder();
         builder.Services
             .AddHttpClient()
-            .AddSingleton<DynamicToolRegistry>()
             .AddMcpServer()
             .WithStdioServerTransport()
             .WithToolsFromAssembly();
@@ -160,7 +160,7 @@ public class McpServerIntegrationTests
         var host = builder.Build();
         
         // Assert
-        var registry = host.Services.GetService<DynamicToolRegistry>();
-        Assert.NotNull(registry);
+        var httpClientFactory = host.Services.GetService<IHttpClientFactory>();
+        Assert.NotNull(httpClientFactory);
     }
 }

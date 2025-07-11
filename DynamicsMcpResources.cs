@@ -36,14 +36,12 @@ Schema information includes:
 
 Perfect for understanding entity structure before performing operations or building integrations.")]
     public static async Task<ResourceContent> GetEntitySchema(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity to retrieve schema information for")]
         string entityName)
     {
         try
         {
-            var toolsResult = await registry.ListDynamicTools();
+            var toolsResult = await DynamicToolRegistry.ListDynamicTools();
             if (!toolsResult.Success)
             {
                 return new ResourceContent
@@ -97,7 +95,7 @@ Perfect for understanding entity structure before performing operations or build
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting entity schema for {EntityName}", entityName);
+            // Error logged in registry - Error getting entity schema for {EntityName}", entityName);
             return new ResourceContent
             {
                 MimeType = "application/json",
@@ -131,12 +129,11 @@ Summary information includes:
 
 Perfect for system discovery, capacity planning, and understanding the complete data model scope.")]
     public static async Task<ResourceContent> GetEntitiesSummary(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger)
+)
     {
         try
         {
-            var toolsResult = await registry.ListDynamicTools();
+            var toolsResult = await DynamicToolRegistry.ListDynamicTools();
             if (!toolsResult.Success)
             {
                 return new ResourceContent
@@ -173,7 +170,7 @@ Perfect for system discovery, capacity planning, and understanding the complete 
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting entities summary");
+            // Error logged in registry - Error getting entities summary");
             return new ResourceContent
             {
                 MimeType = "application/json",
@@ -207,8 +204,7 @@ Documentation includes:
 
 Perfect for developers building integrations or applications that interact with Dynamics 365 through this MCP interface.")]
     public static Task<ResourceContent> GetApiDocumentation(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger)
+)
     {
         try
         {
@@ -317,7 +313,7 @@ Perfect for developers building integrations or applications that interact with 
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting API documentation");
+            // Error logged in registry - Error getting API documentation");
             return Task.FromResult(new ResourceContent
             {
                 MimeType = "application/json",
@@ -359,8 +355,7 @@ Each example includes:
 
 Ideal for learning proper API usage patterns and implementing robust Dynamics 365 integrations.")]
     public static Task<ResourceContent> GetOperationExamples(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger)
+)
     {
         try
         {
@@ -486,7 +481,7 @@ Ideal for learning proper API usage patterns and implementing robust Dynamics 36
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting operation examples");
+            // Error logged in registry - Error getting operation examples");
             return Task.FromResult(new ResourceContent
             {
                 MimeType = "application/json",

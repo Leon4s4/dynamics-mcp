@@ -7,7 +7,7 @@ namespace Dynamics.Mcp;
 /// MCP Prompts for common Dynamics 365 operations and scenarios.
 /// </summary>
 [McpServerPromptType]
-public static class DynamicsMcpPrompts
+public class DynamicsMcpPrompts
 {
     /// <summary>
     /// Generates a prompt for creating a new record with proper field mapping.

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -14,9 +15,9 @@ builder.Logging.AddConsole(consoleLogOptions =>
 
 // Configure services
 builder.Services
-    .AddHttpClient() // Add HttpClient factory for Dynamics API calls
-    .AddSingleton<DynamicToolRegistry>() // Register the dynamic tool registry
+    .AddHttpClient() 
     .AddMcpServer()
+    .WithPrompts<DynamicsMcpPrompts>()
     .WithStdioServerTransport()
     .WithToolsFromAssembly();
 
@@ -54,8 +55,12 @@ Console.WriteLine("⚡ Server initializing with connection string from environme
 
 var app = builder.Build();
 
-// Initialize the Dynamics endpoint at startup
-var registry = app.Services.GetRequiredService<DynamicToolRegistry>();
-await registry.InitializeAsync();
+// Initialize the static Dynamics registry at startup
+var httpClientFactory = app.Services.GetRequiredService<IHttpClientFactory>();
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+var configuration = app.Services.GetRequiredService<IConfiguration>();
+
+DynamicToolRegistry.Initialize(httpClientFactory, logger, configuration);
+await DynamicToolRegistry.InitializeAsync();
 
 await app.RunAsync();

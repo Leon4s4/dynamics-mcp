@@ -81,21 +81,21 @@ public class DynamicsConnectionString
 /// Dynamic MCP tool registry for Microsoft Dynamics 365 (Dataverse API).
 /// Automatically introspects Dynamics schema and generates MCP tools at runtime.
 /// </summary>
-public class DynamicToolRegistry
+public static class DynamicToolRegistry
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILogger<DynamicToolRegistry> _logger;
-    private readonly IConfiguration _configuration;
-    private DynamicsEndpoint? _endpoint;
-    private readonly List<DynamicTool> _tools = new();
+    private static IHttpClientFactory? _httpClientFactory;
+    private static ILogger? _logger;
+    private static IConfiguration? _configuration;
+    private static DynamicsEndpoint? _endpoint;
+    private static readonly List<DynamicTool> _tools = new();
 
     /// <summary>
-    /// Initializes a new instance of the DynamicToolRegistry.
+    /// Initializes the static registry with required dependencies.
     /// </summary>
     /// <param name="httpClientFactory">Factory for creating HTTP clients</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="configuration">Configuration instance</param>
-    public DynamicToolRegistry(IHttpClientFactory httpClientFactory, ILogger<DynamicToolRegistry> logger, IConfiguration configuration)
+    public static void Initialize(IHttpClientFactory httpClientFactory, ILogger logger, IConfiguration configuration)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -105,8 +105,11 @@ public class DynamicToolRegistry
     /// <summary>
     /// Initializes the Dynamics endpoint from environment variables and generates tools.
     /// </summary>
-    public async Task InitializeAsync()
+    public static async Task InitializeAsync()
     {
+        if (_logger == null || _configuration == null || _httpClientFactory == null)
+            throw new InvalidOperationException("DynamicToolRegistry must be initialized before use. Call Initialize() first.");
+            
         try
         {
             _logger.LogInformation("Starting Dynamics endpoint initialization");
@@ -178,8 +181,11 @@ public class DynamicToolRegistry
         }
     }
 
-    private async Task<string> GetAccessTokenAsync(DynamicsConnectionString connString)
+    private static async Task<string> GetAccessTokenAsync(DynamicsConnectionString connString)
     {
+        if (_logger == null || _httpClientFactory == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         try
         {
             _logger.LogInformation("Starting OAuth token acquisition");
@@ -291,8 +297,11 @@ public class DynamicToolRegistry
     /// Gets the status of the Dynamics endpoint and tool initialization.
     /// </summary>
     /// <returns>Status information about the endpoint and tools</returns>
-    public Task<EndpointStatusResult> GetEndpointStatus()
+    public static Task<EndpointStatusResult> GetEndpointStatus()
     {
+        if (_logger == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         try
         {
             if (_endpoint == null)
@@ -328,8 +337,11 @@ public class DynamicToolRegistry
     /// Lists all dynamically generated tools grouped by entity.
     /// </summary>
     /// <returns>Collection of tools grouped by entity</returns>
-    public Task<ListToolsResult> ListDynamicTools()
+    public static Task<ListToolsResult> ListDynamicTools()
     {
+        if (_logger == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         try
         {
             if (_endpoint == null)
@@ -379,8 +391,11 @@ public class DynamicToolRegistry
     /// <param name="toolName">Name of the tool to execute (format: dynamics_operation_entity)</param>
     /// <param name="inputJson">JSON input parameters for the tool</param>
     /// <returns>Execution result with response data or error information</returns>
-    public async Task<ExecuteToolResult> ExecuteDynamicTool(string toolName, string inputJson)
+    public static async Task<ExecuteToolResult> ExecuteDynamicTool(string toolName, string inputJson)
     {
+        if (_logger == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         try
         {
             _logger.LogInformation("Executing dynamic tool: {ToolName}", toolName);
@@ -440,8 +455,11 @@ public class DynamicToolRegistry
     /// Re-introspects schema and regenerates tools for the Dynamics endpoint.
     /// </summary>
     /// <returns>Refresh result with updated tool count</returns>
-    public async Task<RefreshResult> RefreshTools()
+    public static async Task<RefreshResult> RefreshTools()
     {
+        if (_logger == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         try
         {
             if (_endpoint == null)
@@ -488,8 +506,11 @@ public class DynamicToolRegistry
         }
     }
 
-    private async Task<List<EntityDefinition>> IntrospectEntitiesAsync(DynamicsEndpoint endpoint)
+    private static async Task<List<EntityDefinition>> IntrospectEntitiesAsync(DynamicsEndpoint endpoint)
     {
+        if (_logger == null || _httpClientFactory == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         try
         {
             _logger.LogInformation("Starting entity introspection for endpoint: {BaseUrl}", endpoint.BaseUrl);
@@ -533,7 +554,7 @@ public class DynamicToolRegistry
         }
     }
 
-    private async Task<List<DynamicTool>> GenerateToolsForEntityAsync(DynamicsEndpoint endpoint, EntityDefinition entity)
+    private static async Task<List<DynamicTool>> GenerateToolsForEntityAsync(DynamicsEndpoint endpoint, EntityDefinition entity)
     {
         var tools = new List<DynamicTool>();
         
@@ -559,7 +580,7 @@ public class DynamicToolRegistry
         return tools;
     }
 
-    private async Task<List<AttributeDefinition>> GetEntityAttributesAsync(DynamicsEndpoint endpoint, string entityName)
+    private static async Task<List<AttributeDefinition>> GetEntityAttributesAsync(DynamicsEndpoint endpoint, string entityName)
     {
         using var client = CreateHttpClient(endpoint);
         
@@ -572,8 +593,11 @@ public class DynamicToolRegistry
         return result?.Value ?? new List<AttributeDefinition>();
     }
 
-    private HttpClient CreateHttpClient(DynamicsEndpoint endpoint)
+    private static HttpClient CreateHttpClient(DynamicsEndpoint endpoint)
     {
+        if (_httpClientFactory == null)
+            throw new InvalidOperationException("DynamicToolRegistry not initialized");
+            
         var client = _httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(endpoint.BaseUrl);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", endpoint.BearerToken);
@@ -583,14 +607,14 @@ public class DynamicToolRegistry
         return client;
     }
 
-    private string GenerateEndpointId(string baseUrl)
+    private static string GenerateEndpointId(string baseUrl)
     {
         var uri = new Uri(baseUrl);
         return uri.Host.Replace(".", "_").Replace("-", "_").ToLowerInvariant();
     }
 
     // Tool generation methods will be continued in the next part...
-    private DynamicTool GenerateCreateTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
+    private static DynamicTool GenerateCreateTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
     {
         var createableFields = attributes.Where(a => a.IsValidForCreate).ToList();
         var requiredFields = createableFields.Where(a => a.RequiredLevel == "ApplicationRequired" || a.RequiredLevel == "SystemRequired").ToList();
@@ -608,7 +632,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private DynamicTool GenerateReadTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
+    private static DynamicTool GenerateReadTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
     {
         return new DynamicTool
         {
@@ -635,7 +659,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private DynamicTool GenerateUpdateTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
+    private static DynamicTool GenerateUpdateTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
     {
         var updateableFields = attributes.Where(a => a.IsValidForUpdate).ToList();
 
@@ -652,7 +676,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private DynamicTool GenerateDeleteTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
+    private static DynamicTool GenerateDeleteTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
     {
         return new DynamicTool
         {
@@ -679,7 +703,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private DynamicTool GenerateListTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
+    private static DynamicTool GenerateListTool(DynamicsEndpoint endpoint, EntityDefinition entity, List<AttributeDefinition> attributes)
     {
         return new DynamicTool
         {
@@ -720,7 +744,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private DynamicTool GenerateSearchTool(DynamicsEndpoint endpoint, EntityDefinition entity, AttributeDefinition field, List<AttributeDefinition> attributes)
+    private static DynamicTool GenerateSearchTool(DynamicsEndpoint endpoint, EntityDefinition entity, AttributeDefinition field, List<AttributeDefinition> attributes)
     {
         return new DynamicTool
         {
@@ -753,7 +777,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private Dictionary<string, object> GenerateInputSchema(List<AttributeDefinition> fields, List<AttributeDefinition> requiredFields)
+    private static Dictionary<string, object> GenerateInputSchema(List<AttributeDefinition> fields, List<AttributeDefinition> requiredFields)
     {
         var properties = new Dictionary<string, object>();
         
@@ -774,7 +798,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private Dictionary<string, object> GenerateUpdateInputSchema(List<AttributeDefinition> fields)
+    private static Dictionary<string, object> GenerateUpdateInputSchema(List<AttributeDefinition> fields)
     {
         var properties = new Dictionary<string, object>
         {
@@ -802,7 +826,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private string GetJsonType(string attributeType)
+    private static string GetJsonType(string attributeType)
     {
         return attributeType?.ToLowerInvariant() switch
         {
@@ -823,7 +847,7 @@ public class DynamicToolRegistry
         };
     }
 
-    private async Task<object> ExecuteToolAsync(DynamicsEndpoint endpoint, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteToolAsync(DynamicsEndpoint endpoint, DynamicTool tool, Dictionary<string, object> input)
     {
         using var client = CreateHttpClient(endpoint);
         
@@ -846,7 +870,7 @@ public class DynamicToolRegistry
         }
     }
 
-    private async Task<object> ExecuteCreateAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteCreateAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
         var json = JsonSerializer.Serialize(input);
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
@@ -858,7 +882,7 @@ public class DynamicToolRegistry
         return JsonSerializer.Deserialize<object>(responseJson) ?? new { success = true };
     }
 
-    private async Task<object> ExecuteReadAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteReadAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
         if (!input.TryGetValue("id", out var idObj) || string.IsNullOrWhiteSpace(idObj?.ToString()))
             throw new ArgumentException("ID is required for read operation");
@@ -872,7 +896,7 @@ public class DynamicToolRegistry
         return JsonSerializer.Deserialize<object>(json) ?? new { };
     }
 
-    private async Task<object> ExecuteUpdateAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteUpdateAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
         if (!input.TryGetValue("id", out var idObj) || idObj is not string id || string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("ID is required for update operation");
@@ -890,7 +914,7 @@ public class DynamicToolRegistry
         return new { success = true, message = "Record updated successfully" };
     }
 
-    private async Task<object> ExecuteDeleteAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteDeleteAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
         if (!input.TryGetValue("id", out var idObj) || idObj is not string id || string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("ID is required for delete operation");
@@ -902,7 +926,7 @@ public class DynamicToolRegistry
         return new { success = true, message = "Record deleted successfully" };
     }
 
-    private async Task<object> ExecuteListAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteListAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
         var queryParams = new List<string>();
         
@@ -928,7 +952,7 @@ public class DynamicToolRegistry
         return JsonSerializer.Deserialize<object>(json) ?? new { };
     }
 
-    private async Task<object> ExecuteSearchAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
+    private static async Task<object> ExecuteSearchAsync(HttpClient client, DynamicTool tool, Dictionary<string, object> input)
     {
         if (string.IsNullOrWhiteSpace(tool.SearchField))
             throw new InvalidOperationException("Search field not specified for search operation");

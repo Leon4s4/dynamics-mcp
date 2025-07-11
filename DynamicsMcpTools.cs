@@ -34,13 +34,11 @@ Returns detailed status information including:
 - Tool generation statistics
 - Initialization timestamp
 - Any configuration or connection errors")]
-    public static async Task<object> GetDynamicsStatus(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger)
+    public static async Task<object> GetDynamicsStatus()
     {
         try
         {
-            var status = await registry.GetEndpointStatus();
+            var status = await DynamicToolRegistry.GetEndpointStatus();
             
             // Add detailed diagnostic information
             var connectionString = Environment.GetEnvironmentVariable("DYNAMICS_CONNECTION_STRING");
@@ -70,7 +68,6 @@ Returns detailed status information including:
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting Dynamics status");
             return new { success = false, message = ex.Message };
         }
     }
@@ -102,13 +99,11 @@ Entity information includes:
 
 Perfect for API discovery and understanding the complete Dynamics 365 data model
 accessible through this MCP server.")]
-    public static async Task<object> ListDynamicsEntities(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger)
+    public static async Task<object> ListDynamicsEntities()
     {
         try
         {
-            var result = await registry.ListDynamicTools();
+            var result = await DynamicToolRegistry.ListDynamicTools();
             if (!result.Success)
             {
                 return new { success = false, message = result.Message };
@@ -148,7 +143,6 @@ accessible through this MCP server.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error listing Dynamics entities");
             return new { success = false, message = ex.Message };
         }
     }
@@ -187,8 +181,6 @@ The tool automatically handles:
 Returns detailed creation results including the new record ID, creation timestamp,
 and any validation warnings or errors encountered during the process.")]
     public static async Task<object> CreateDynamicsRecord(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity (e.g., 'account', 'contact', 'opportunity')")]
         string entityName,
         [Description("JSON object containing the field values for the new record. Format: {\"fieldname\": \"value\", \"anotherfield\": \"value\"}. Use proper data types: strings in quotes, numbers without quotes, dates in ISO format, booleans as true/false")]
@@ -197,7 +189,7 @@ and any validation warnings or errors encountered during the process.")]
         try
         {
             var toolName = $"dynamics_create_{entityName}";
-            var result = await registry.ExecuteDynamicTool(toolName, recordData);
+            var result = await DynamicToolRegistry.ExecuteDynamicTool(toolName, recordData);
             
             return new
             {
@@ -210,7 +202,6 @@ and any validation warnings or errors encountered during the process.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error creating Dynamics record for entity {EntityName}", entityName);
             return new { success = false, message = ex.Message, entity_name = entityName };
         }
     }
@@ -248,8 +239,6 @@ The tool handles:
 Perfect for record inspection, data validation, and detailed entity analysis.
 Returns structured data suitable for further processing or display.")]
     public static async Task<object> ReadDynamicsRecord(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity to read from (e.g., 'account', 'contact', 'lead')")]
         string entityName,
         [Description("The unique GUID identifier of the record to retrieve. Format: '12345678-1234-1234-1234-123456789012' (with or without hyphens)")]
@@ -259,7 +248,7 @@ Returns structured data suitable for further processing or display.")]
         {
             var toolName = $"dynamics_read_{entityName}";
             var inputData = JsonSerializer.Serialize(new { id = recordId });
-            var result = await registry.ExecuteDynamicTool(toolName, inputData);
+            var result = await DynamicToolRegistry.ExecuteDynamicTool(toolName, inputData);
             
             return new
             {
@@ -273,7 +262,6 @@ Returns structured data suitable for further processing or display.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error reading Dynamics record {RecordId} for entity {EntityName}", recordId, entityName);
             return new { success = false, message = ex.Message, entity_name = entityName, record_id = recordId };
         }
     }
@@ -315,8 +303,6 @@ The tool ensures data integrity by validating all changes against entity schema,
 business rules, and referential constraints before applying updates.
 Returns update confirmation with timestamp and any validation warnings.")]
     public static async Task<object> UpdateDynamicsRecord(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity containing the record to update")]
         string entityName,
         [Description("The unique GUID identifier of the record to update. Must be a valid GUID format")]
@@ -333,7 +319,7 @@ Returns update confirmation with timestamp and any validation warnings.")]
             updateData["id"] = recordId;
             
             var inputData = JsonSerializer.Serialize(updateData);
-            var result = await registry.ExecuteDynamicTool(toolName, inputData);
+            var result = await DynamicToolRegistry.ExecuteDynamicTool(toolName, inputData);
             
             return new
             {
@@ -347,7 +333,6 @@ Returns update confirmation with timestamp and any validation warnings.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error updating Dynamics record {RecordId} for entity {EntityName}", recordId, entityName);
             return new { success = false, message = ex.Message, entity_name = entityName, record_id = recordId };
         }
     }
@@ -392,8 +377,6 @@ The tool respects all Dynamics 365 deletion constraints including:
 Returns detailed deletion status including success confirmation,
 any related records affected, and warnings about potential impacts.")]
     public static async Task<object> DeleteDynamicsRecord(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity containing the record to delete")]
         string entityName,
         [Description("The unique GUID identifier of the record to delete. Deletion is permanent and cannot be undone")]
@@ -403,7 +386,7 @@ any related records affected, and warnings about potential impacts.")]
         {
             var toolName = $"dynamics_delete_{entityName}";
             var inputData = JsonSerializer.Serialize(new { id = recordId });
-            var result = await registry.ExecuteDynamicTool(toolName, inputData);
+            var result = await DynamicToolRegistry.ExecuteDynamicTool(toolName, inputData);
             
             return new
             {
@@ -417,7 +400,6 @@ any related records affected, and warnings about potential impacts.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error deleting Dynamics record {RecordId} for entity {EntityName}", recordId, entityName);
             return new { success = false, message = ex.Message, entity_name = entityName, record_id = recordId };
         }
     }
@@ -461,8 +443,6 @@ Filtering examples:
 Returns paginated results with metadata including total count estimates,
 has more data indicators, and query performance metrics.")]
     public static async Task<object> ListDynamicsRecords(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity to query for records")]
         string entityName,
         [Description("OData filter expression to limit results. Examples: 'statuscode eq 1', 'contains(name, \"Corp\")', 'createdon gt 2023-01-01T00:00:00Z'. Use single quotes for string values")]
@@ -489,7 +469,7 @@ has more data indicators, and query performance metrics.")]
                 queryParams["orderby"] = orderBy;
             
             var inputData = JsonSerializer.Serialize(queryParams);
-            var result = await registry.ExecuteDynamicTool(toolName, inputData);
+            var result = await DynamicToolRegistry.ExecuteDynamicTool(toolName, inputData);
             
             return new
             {
@@ -503,7 +483,7 @@ has more data indicators, and query performance metrics.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error listing Dynamics records for entity {EntityName}", entityName);
+            // Error logged in registry - Error listing Dynamics records for entity {EntityName}", entityName);
             return new { success = false, message = ex.Message, entity_name = entityName };
         }
     }
@@ -554,8 +534,6 @@ Perfect for implementing:
 
 Returns ranked search results with relevance scores and search metadata.")]
     public static async Task<object> SearchDynamicsRecords(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger,
         [Description("The logical name of the Dynamics 365 entity to search within")]
         string entityName,
         [Description("The name of the field to search in. Must be a searchable field like 'name', 'emailaddress1', or other text/lookup fields")]
@@ -575,7 +553,7 @@ Returns ranked search results with relevance scores and search metadata.")]
             };
             
             var inputData = JsonSerializer.Serialize(searchParams);
-            var result = await registry.ExecuteDynamicTool(toolName, inputData);
+            var result = await DynamicToolRegistry.ExecuteDynamicTool(toolName, inputData);
             
             return new
             {
@@ -591,7 +569,7 @@ Returns ranked search results with relevance scores and search metadata.")]
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error searching Dynamics records for entity {EntityName} by {FieldName}", entityName, fieldName);
+            // Error logged in registry - Error searching Dynamics records for entity {EntityName} by {FieldName}", entityName, fieldName);
             return new { success = false, message = ex.Message, entity_name = entityName, field_name = fieldName };
         }
     }
@@ -642,12 +620,11 @@ Returns detailed refresh results including:
 - Performance metrics for the refresh operation
 - Warnings about deprecated or inaccessible entities")]
     public static async Task<object> RefreshDynamicsSchema(
-        DynamicToolRegistry registry,
-        ILogger<DynamicToolRegistry> logger)
+)
     {
         try
         {
-            var result = await registry.RefreshTools();
+            var result = await DynamicToolRegistry.RefreshTools();
             return new
             {
                 success = result.Success,
@@ -659,7 +636,6 @@ Returns detailed refresh results including:
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error refreshing Dynamics schema");
             return new { success = false, message = ex.Message };
         }
     }
