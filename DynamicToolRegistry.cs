@@ -109,8 +109,12 @@ public class DynamicToolRegistry
     {
         try
         {
+            _logger.LogInformation("Starting Dynamics endpoint initialization");
+            
             var connectionString = _configuration.GetConnectionString("Dynamics") ?? 
                                  Environment.GetEnvironmentVariable("DYNAMICS_CONNECTION_STRING");
+            
+            _logger.LogInformation("Connection string found: {HasConnectionString}", !string.IsNullOrWhiteSpace(connectionString));
             
             if (string.IsNullOrWhiteSpace(connectionString))
             {
@@ -118,9 +122,13 @@ public class DynamicToolRegistry
                 return;
             }
 
-            _logger.LogInformation("Initializing Dynamics endpoint from connection string");
+            _logger.LogInformation("Connection string length: {Length}", connectionString.Length);
+            _logger.LogInformation("Parsing connection string");
             
             var connString = DynamicsConnectionString.Parse(connectionString);
+            
+            _logger.LogInformation("Parsed connection string - URL: {Url}, AuthType: {AuthType}", 
+                connString.Url, connString.AuthType);
             
             if (string.IsNullOrWhiteSpace(connString.Url))
             {
@@ -128,16 +136,16 @@ public class DynamicToolRegistry
                 return;
             }
 
-            // For now, we'll use ClientId/ClientSecret OAuth flow
-            // In a real implementation, you'd need to get an access token
+            _logger.LogInformation("Starting OAuth token acquisition");
             var bearerToken = await GetAccessTokenAsync(connString);
             
             if (string.IsNullOrWhiteSpace(bearerToken))
             {
-                _logger.LogError("Failed to obtain access token from connection string");
+                _logger.LogError("Failed to obtain access token from connection string - initialization aborted");
                 return;
             }
 
+            _logger.LogInformation("Access token obtained successfully, creating endpoint");
             _endpoint = new DynamicsEndpoint
             {
                 Id = "default",
@@ -147,20 +155,26 @@ public class DynamicToolRegistry
                 RegisteredAt = DateTime.UtcNow
             };
 
-            // Generate tools for all entities
+            _logger.LogInformation("Endpoint created, starting entity introspection");
             var entities = await IntrospectEntitiesAsync(_endpoint);
+            _logger.LogInformation("Found {EntityCount} entities", entities.Count);
             
+            _logger.LogInformation("Generating tools for entities");
             foreach (var entity in entities)
             {
+                _logger.LogDebug("Generating tools for entity: {EntityName}", entity.LogicalName);
                 var entityTools = await GenerateToolsForEntityAsync(_endpoint, entity);
                 _tools.AddRange(entityTools);
+                _logger.LogDebug("Generated {ToolCount} tools for entity {EntityName}", 
+                    entityTools.Count, entity.LogicalName);
             }
 
             _logger.LogInformation("Successfully initialized Dynamics endpoint with {ToolCount} tools", _tools.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize Dynamics endpoint");
+            _logger.LogError(ex, "Failed to initialize Dynamics endpoint: {Message}", ex.Message);
+            _logger.LogError("Stack trace: {StackTrace}", ex.StackTrace);
         }
     }
 
@@ -168,16 +182,29 @@ public class DynamicToolRegistry
     {
         try
         {
+            _logger.LogInformation("Starting OAuth token acquisition");
+            _logger.LogInformation("Connection string URL: {Url}", connString.Url);
+            _logger.LogInformation("Auth type - IsClientCredentials: {IsClientCreds}, IsUsernamePassword: {IsUserPass}", 
+                connString.IsClientCredentials, connString.IsUsernamePassword);
+            
             // Extract tenant from URL (e.g., https://org.crm.dynamics.com -> org.crm.dynamics.com)
             var uri = new Uri(connString.Url);
             var resource = $"https://{uri.Host}/";
+            _logger.LogInformation("OAuth resource: {Resource}", resource);
             
-            var tokenEndpoint = "https://login.microsoftonline.com/common/oauth2/token";
+            // For Dynamics 365, we need to extract the tenant from the org URL
+            // Example: https://contoso.crm.dynamics.com -> contoso.onmicrosoft.com
+            var orgName = uri.Host.Split('.')[0];
+            var tenantDomain = $"{orgName}.onmicrosoft.com";
+            var tokenEndpoint = $"https://login.microsoftonline.com/{tenantDomain}/oauth2/token";
+            
+            _logger.LogInformation("Using tenant-specific endpoint: {TokenEndpoint}", tokenEndpoint);
             Dictionary<string, string> tokenRequest;
 
             if (connString.IsClientCredentials)
             {
                 _logger.LogInformation("Using Client Credentials OAuth flow");
+                _logger.LogInformation("Client ID: {ClientId}", connString.ClientId?.Substring(0, Math.Min(8, connString.ClientId.Length)) + "...");
                 
                 // Client Credentials flow (App-only authentication)
                 tokenRequest = new Dictionary<string, string>
@@ -191,6 +218,7 @@ public class DynamicToolRegistry
             else if (connString.IsUsernamePassword)
             {
                 _logger.LogInformation("Using Resource Owner Password Credentials OAuth flow");
+                _logger.LogInformation("Username: {Username}", connString.Username);
                 
                 // Resource Owner Password Credentials flow (Username/Password)
                 if (string.IsNullOrEmpty(connString.ClientId))
@@ -199,6 +227,8 @@ public class DynamicToolRegistry
                     connString.ClientId = "51f81489-12ee-4a9e-aaae-a2591f45987d";
                     _logger.LogInformation("Using default PowerApps Client ID for username/password authentication");
                 }
+                
+                _logger.LogInformation("Client ID: {ClientId}", connString.ClientId);
                 
                 tokenRequest = new Dictionary<string, string>
                 {
@@ -212,12 +242,19 @@ public class DynamicToolRegistry
             else
             {
                 _logger.LogError("Invalid authentication configuration. Provide either ClientId+ClientSecret OR Username+Password");
+                _logger.LogError("ClientId present: {HasClientId}, ClientSecret present: {HasClientSecret}", 
+                    !string.IsNullOrEmpty(connString.ClientId), !string.IsNullOrEmpty(connString.ClientSecret));
+                _logger.LogError("Username present: {HasUsername}, Password present: {HasPassword}", 
+                    !string.IsNullOrEmpty(connString.Username), !string.IsNullOrEmpty(connString.Password));
                 return string.Empty;
             }
 
+            _logger.LogInformation("Making OAuth token request to: {TokenEndpoint}", tokenEndpoint);
             using var client = _httpClientFactory.CreateClient();
             var content = new FormUrlEncodedContent(tokenRequest);
             var response = await client.PostAsync(tokenEndpoint, content);
+
+            _logger.LogInformation("OAuth response status: {StatusCode}", response.StatusCode);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -228,20 +265,24 @@ public class DynamicToolRegistry
             }
 
             var tokenResponse = await response.Content.ReadAsStringAsync();
+            _logger.LogInformation("Received token response (length: {Length})", tokenResponse.Length);
+            
             var tokenData = JsonSerializer.Deserialize<Dictionary<string, object>>(tokenResponse);
 
             if (tokenData != null && tokenData.TryGetValue("access_token", out var accessToken))
             {
-                _logger.LogInformation("Successfully obtained access token");
-                return accessToken.ToString() ?? string.Empty;
+                var tokenString = accessToken.ToString() ?? string.Empty;
+                _logger.LogInformation("Successfully obtained access token (length: {Length})", tokenString.Length);
+                return tokenString;
             }
 
             _logger.LogError("Access token not found in response");
+            _logger.LogError("Response keys: {Keys}", tokenData?.Keys != null ? string.Join(", ", tokenData.Keys) : "none");
             return string.Empty;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obtaining access token");
+            _logger.LogError(ex, "Error obtaining access token: {Message}", ex.Message);
             return string.Empty;
         }
     }
@@ -449,15 +490,47 @@ public class DynamicToolRegistry
 
     private async Task<List<EntityDefinition>> IntrospectEntitiesAsync(DynamicsEndpoint endpoint)
     {
-        using var client = CreateHttpClient(endpoint);
-        
-        var response = await client.GetAsync("/api/data/v9.2/EntityDefinitions?$select=LogicalName,DisplayName,Description,EntitySetName");
-        response.EnsureSuccessStatusCode();
-        
-        var json = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<ODataResponse<EntityDefinition>>(json);
-        
-        return result?.Value ?? new List<EntityDefinition>();
+        try
+        {
+            _logger.LogInformation("Starting entity introspection for endpoint: {BaseUrl}", endpoint.BaseUrl);
+            
+            using var client = CreateHttpClient(endpoint);
+            var requestUri = "/api/data/v9.2/EntityDefinitions?$select=LogicalName,DisplayName,Description,EntitySetName";
+            
+            _logger.LogInformation("Making request to: {RequestUri}", requestUri);
+            var response = await client.GetAsync(requestUri);
+            
+            _logger.LogInformation("Entity introspection response status: {StatusCode}", response.StatusCode);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Entity introspection failed: {StatusCode} - {Content}", 
+                    response.StatusCode, errorContent);
+                throw new HttpRequestException($"Entity introspection failed: {response.StatusCode} - {errorContent}");
+            }
+            
+            var json = await response.Content.ReadAsStringAsync();
+            _logger.LogInformation("Received entity definitions response (length: {Length})", json.Length);
+            
+            var result = JsonSerializer.Deserialize<ODataResponse<EntityDefinition>>(json);
+            var entities = result?.Value ?? new List<EntityDefinition>();
+            
+            _logger.LogInformation("Successfully parsed {EntityCount} entity definitions", entities.Count);
+            
+            if (entities.Count > 0)
+            {
+                _logger.LogInformation("Sample entities: {SampleEntities}", 
+                    string.Join(", ", entities.Take(5).Select(e => e.LogicalName)));
+            }
+            
+            return entities;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during entity introspection: {Message}", ex.Message);
+            throw;
+        }
     }
 
     private async Task<List<DynamicTool>> GenerateToolsForEntityAsync(DynamicsEndpoint endpoint, EntityDefinition entity)

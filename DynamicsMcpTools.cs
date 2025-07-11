@@ -41,13 +41,31 @@ Returns detailed status information including:
         try
         {
             var status = await registry.GetEndpointStatus();
+            
+            // Add detailed diagnostic information
+            var connectionString = Environment.GetEnvironmentVariable("DYNAMICS_CONNECTION_STRING");
+            var hasConnectionString = !string.IsNullOrWhiteSpace(connectionString);
+            
             return new
             {
                 success = status.Success,
                 message = status.Message,
                 endpoint_url = status.EndpointUrl,
                 tool_count = status.ToolCount,
-                initialized_at = status.InitializedAt?.ToString("yyyy-MM-dd HH:mm:ss UTC")
+                initialized_at = status.InitializedAt?.ToString("yyyy-MM-dd HH:mm:ss UTC"),
+                diagnostics = new
+                {
+                    has_connection_string = hasConnectionString,
+                    connection_string_length = connectionString?.Length ?? 0,
+                    connection_string_preview = hasConnectionString ? 
+                        connectionString.Substring(0, Math.Min(50, connectionString.Length)) + "..." : 
+                        "Not set",
+                    environment_check = new
+                    {
+                        dotnet_environment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
+                        aspnetcore_environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+                    }
+                }
             };
         }
         catch (Exception ex)
